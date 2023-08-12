@@ -32,7 +32,7 @@ size_t test(std::string &lines) {
   const char *h_text = lines.c_str();
   char *d_text;
   char *d_is_valid;
-  char **d_addresses;
+  uint32_t *d_indices;
 
   cudaMalloc(&d_text, len);
   cudaMemcpy(d_text, h_text, len, cudaMemcpyHostToDevice);
@@ -40,23 +40,24 @@ size_t test(std::string &lines) {
   const auto json_count =
       thrust::count(thrust::device, d_text, d_text + len, '\n');
 
-  cudaMalloc(&d_addresses, json_count * sizeof(char *));
+  cudaMalloc(&d_indices, json_count * sizeof(uint32_t *));
   cudaMalloc(&d_is_valid, json_count * sizeof(char));
 
-  thrust::copy_if(thrust::device, thrust::make_counting_iterator(d_text),
-                  thrust::make_counting_iterator(d_text + len), d_addresses,
+  thrust::copy_if(thrust::device, thrust::make_counting_iterator(uint32_t(0)),
+                  thrust::make_counting_iterator(uint32_t(len)),
+                  thrust::make_counting_iterator(d_text), d_indices,
                   is_newline());
 
   std::cout << "JSON COUNT: " << json_count << std::endl;
 
   // Run warp filter
-  filter::gpu_filter()(d_text, static_cast<size_t>(json_count), d_addresses,
+  filter::gpu_filter()(d_text, static_cast<size_t>(json_count), d_indices,
                        d_is_valid);
 
   const auto correct_count =
       thrust::reduce(thrust::device, d_is_valid, d_is_valid + json_count, 0);
   std::cout << " VALID: " << correct_count << std::endl;
-  cudaFree(d_addresses);
+  cudaFree(d_indices);
   cudaFree(d_text);
   return correct_count;
 }

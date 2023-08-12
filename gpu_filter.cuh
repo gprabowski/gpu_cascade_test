@@ -2,6 +2,7 @@
 
 #include "cascade.hpp"
 #include <cooperative_groups.h>
+#include <cstdint>
 
 namespace cg = cooperative_groups;
 
@@ -79,7 +80,7 @@ __device__ bool run_filter(const char *json_start, const char *json_end,
 }
 
 __global__ void filter_warp_per_json(const char *text, size_t num_jsons,
-                                     char **addresses, char *out) {
+                                     uint32_t *indices, char *out) {
   constexpr auto group_size = find_group_size<cascade::RF>();
   const auto grid = cg::this_grid();
   const auto tid = grid.thread_rank();
@@ -91,8 +92,8 @@ __global__ void filter_warp_per_json(const char *text, size_t num_jsons,
     return;
   }
 
-  const auto json_start = (wid == 0) ? text : addresses[wid - 1];
-  const auto json_end = addresses[wid];
+  const auto json_start = (wid == 0) ? text : &text[indices[wid - 1]];
+  const auto json_end = &text[indices[wid]];
 
   // cascade tree traversal
   int parent = 0;
@@ -132,11 +133,10 @@ __global__ void filter_warp_per_json(const char *text, size_t num_jsons,
 struct gpu_filter {
   constexpr static char name[] = "Cooperative Group Filter";
   int WarpsPerBlock = 8;
-  auto operator()(const char *text, size_t num_jsons, char **addresses,
+  auto operator()(const char *text, size_t num_jsons, uint32_t *indices,
                   char *out) {
     filter_warp_per_json<<<(num_jsons + WarpsPerBlock - 1) / WarpsPerBlock,
-                           WarpsPerBlock * 32>>>(text, num_jsons, addresses,
-                                                 out);
+                           WarpsPerBlock * 32>>>(text, num_jsons, indices, out);
   }
 };
 
